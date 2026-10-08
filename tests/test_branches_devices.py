@@ -24,6 +24,8 @@ CHECKS = [
         WHERE opens_at IS NULL OR closes_at IS NULL OR closes_at <= opens_at
         """,
     ),
+    # Assumes the current layout: one turnstile in, one out and one tablet per branch. A branch that
+    # opens with more than one entrance will fail this check on purpose; widen it then, deliberately.
     Check(
         "B03_branch_device_set",
         "branch without exactly one entrance, one exit and one front_desk device",

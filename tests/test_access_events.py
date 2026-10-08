@@ -73,7 +73,7 @@ CHECKS = [
     ),
     Check(
         "A03_clock_ahead",
-        "device stamped events in the future (event_ts > ingested_at + 1 min); reports use least(event_ts, ingested_at)",
+        "any sender (device or CRM) stamped events in the future (event_ts > ingested_at + 1 min); reports use least(event_ts, ingested_at)",
         WARNING,
         """
         SELECT device_id, count(*) AS rows_, min(event_ts) AS first_ts, max(event_ts) AS last_ts,

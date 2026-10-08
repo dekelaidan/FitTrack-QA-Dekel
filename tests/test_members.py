@@ -98,6 +98,24 @@ CHECKS = [
         """,
     ),
     Check(
+        "M10_tier_changed_without_active_membership",
+        "tier_changed while the member has no membership yet or it is cancelled (M07 only orders start/reactivate/cancel)",
+        BLOCKING,
+        """
+        WITH ms AS (
+            SELECT member_id, event_type, event_ts,
+                   lead(event_ts) OVER (PARTITION BY member_id ORDER BY event_ts, event_id) AS until
+            FROM events
+            WHERE event_type IN ('membership_started', 'membership_reactivated', 'membership_cancelled'))
+        SELECT t.event_id, t.member_id, t.event_ts, coalesce(ms.event_type, '(no membership yet)') AS state_at_change
+        FROM events t
+        LEFT JOIN ms ON ms.member_id = t.member_id AND t.event_ts >= ms.event_ts
+                    AND (ms.until IS NULL OR t.event_ts < ms.until)
+        WHERE t.event_type = 'tier_changed'
+          AND (ms.event_type IS NULL OR ms.event_type = 'membership_cancelled')
+        """,
+    ),
+    Check(
         "M08_tier_changed_from_mismatch",
         "tier_changed.from is not the member's tier at that moment",
         WARNING,
