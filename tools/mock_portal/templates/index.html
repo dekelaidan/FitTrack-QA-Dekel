@@ -1,0 +1,63 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>FitTrack Mock Portal</title><script src="https://cdn.tailwindcss.com"></script>
+<style type="text/tailwindcss">
+  .inp { @apply w-full border rounded px-2 py-1 text-sm; } .chk { @apply flex items-center gap-2 text-sm; }
+  .btn { @apply w-full rounded px-3 py-2 text-sm font-semibold text-white; } td { @apply pr-3 py-1 whitespace-nowrap; }
+</style></head><body class="bg-slate-100 text-slate-800 p-6"><h1 class="text-2xl font-bold mb-4">FitTrack · Mock CRM &amp; Access-Control Portal</h1>
+<div id="cards" class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6"></div>
+<div class="grid lg:grid-cols-3 gap-6">
+  <section class="bg-white rounded-xl shadow p-4 space-y-3">
+    <div class="flex gap-2"><button id="t-crm" onclick="tab('crm')">CRM</button><button id="t-access" onclick="tab('access')">Access Control</button></div>
+    <form id="crm" onsubmit="send(event)" class="space-y-2">
+      <select name="event_type" class="inp"><option>membership_started</option><option>membership_cancelled</option><option>tier_changed</option></select>
+      <input name="member_id" value="1001" class="inp" placeholder="member_id">
+      <select name="tier" class="inp"><option>basic</option><option>standard</option><option>premium</option></select>
+      <input name="branch_id" value="1" class="inp" placeholder="branch_id">
+      <textarea name="details" rows="2" class="inp" placeholder='Extra details JSON, e.g. {"reason": "price"}'></textarea>
+      <label class="chk"><input type="checkbox" name="dup_ref"> Duplicate source_ref (2 rows, same ref)</label> <label class="chk"><input type="checkbox" name="bad_tier"> Invalid tier name</label>
+      <button class="btn bg-indigo-600">Send CRM event</button>
+    </form>
+    <form id="access" onsubmit="send(event)" class="space-y-2" hidden>
+      <select name="event_type" class="inp"><option>check_in</option><option>check_out</option><option>friend_visit</option></select>
+      <input name="member_id" value="1001" class="inp" placeholder="member_id">
+      <input name="branch_id" value="1" class="inp" placeholder="branch_id (1-8)">
+      <label class="chk"><input type="checkbox" name="upper"> Casing bug (CHECK_IN)</label>
+      <label class="chk"><input type="checkbox" name="unclosed"> Unclosed visit (check_in 12h ago)</label> <label class="chk"><input type="checkbox" name="breach"> Friend allowance breach (member's real tier limit + 1)</label>
+      <label class="chk"><input type="checkbox" name="skew"> Clock skew (event_ts +2h)</label>
+      <button class="btn bg-emerald-600">Send access event</button>
+    </form>
+    <button onclick="cleanup()" class="btn bg-slate-500">Delete all injected events (event_id &ge; 9e9)</button>
+    <p id="msg" class="text-sm"></p></section>
+  <section class="lg:col-span-2 bg-white rounded-xl shadow p-4 overflow-auto max-h-[75vh]">
+    <p class="text-xs text-slate-500 mb-2">Recent events in <code id="tbl"></code> · refresh 3s · <span class="bg-red-100 px-1">casing</span> <span class="bg-amber-100 px-1">dup ref</span> <span class="bg-purple-100 px-1">skew</span></p>
+    <table class="w-full text-xs"><thead class="text-left border-b"><tr><th>event_id</th><th>ingested_at</th><th>event_ts</th>
+      <th>source_ref</th><th>event_type</th><th>member</th><th>branch</th><th>device</th><th>details</th></tr></thead><tbody id="rows"></tbody></table></section></div><script>
+const $ = id => document.getElementById(id), COLS = ['event_id','ingested_at','event_ts','source_ref','event_type','member_id','branch_id','device_id'];
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tab = t => ['crm', 'access'].forEach(x => { $(x).hidden = x !== t;
+  $('t-' + x).className = 'px-3 py-1 rounded ' + (x === t ? 'bg-slate-800 text-white' : 'bg-slate-200'); });
+function say(j) {
+  $('msg').textContent = !j.ok ? '✗ ' + j.error : j.deleted !== undefined ? `✓ ${j.deleted} row(s) deleted` : `✓ ${j.inserted} row(s) inserted`;
+  $('msg').className = 'text-sm ' + (j.ok ? 'text-emerald-700' : 'text-red-700');
+}
+async function post(url, body = {}) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  say(await r.json()); refresh();
+}
+function send(e) {
+  e.preventDefault(); const b = Object.fromEntries(new FormData(e.target));
+  e.target.querySelectorAll('input[type=checkbox]').forEach(c => b[c.name] = c.checked);
+  post('/api/' + e.target.id, b);
+}
+const cleanup = () => confirm('Delete every injected row (event_id >= 9,000,000,000)?') && post('/api/cleanup');
+async function refresh() {
+  const d = await (await fetch('/api/dashboard')).json();
+  if (!d.cards) return say(d);
+  $('tbl').textContent = d.table;
+  $('cards').innerHTML = Object.entries(d.cards).map(([k, v]) => `<div class="rounded-xl shadow p-4 border-l-4
+    ${v ? 'bg-red-50 border-red-500' : 'bg-white border-emerald-500'}"><div class="text-xs uppercase text-slate-500">${esc(k)}</div>
+    <div class="text-3xl font-bold">${v}</div></div>`).join('');
+  $('rows').innerHTML = d.events.map(r => `<tr class="border-b ${r.f_case ? 'bg-red-100' : r.f_dup ? 'bg-amber-100' : r.f_skew ? 'bg-purple-100' : ''}">
+    ${COLS.map(k => `<td>${esc(r[k])}</td>`).join('')}<td class="font-mono">${esc(JSON.stringify(r.details))}</td></tr>`).join('');
+}
+tab('crm'); refresh(); setInterval(refresh, 3000);
+</script></body></html>

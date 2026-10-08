@@ -1,190 +1,175 @@
-# FitTrack — Senior QA Engineer (Data Quality) home assignment
+# FitTrack data quality
 
-FitTrack runs eight gyms across four US time zones. Two systems write into one
-Postgres database:
+Data-quality test suite, report queries and findings for the FitTrack home assignment
+(the original brief is in [`docs/ASSIGNMENT.md`](docs/ASSIGNMENT.md)).
 
-- the **CRM** records memberships: sign-ups, tier changes, cancellations and
-  reactivations;
-- the **access-control system**, made up of entrance and exit turnstiles plus a
-  front-desk tablet at every branch, records each check-in, each check-out and
-  each friend a member brings along.
+| What | Where |
+|---|---|
+| Test suite (one command, CI-ready) | [`tests/`](tests/) |
+| Findings: root causes, evidence, impact, questions, monitoring | [`DATA_QUALITY.md`](DATA_QUALITY.md) |
+| Required report | [`reports/visits_per_branch.sql`](reports/visits_per_branch.sql) |
+| Bonus reports | [`reports/active_members_monthly.sql`](reports/active_members_monthly.sql), [`reports/daily_visits.sql`](reports/daily_visits.sql), [`reports/friend_allowance_monthly.sql`](reports/friend_allowance_monthly.sql) |
+| How AI was used, corrected and verified | [`AI_USAGE.md`](AI_USAGE.md) |
+| Exploration and proof queries, with saved outputs | [`profiling/`](profiling/) |
+| Mock CRM & access-control portal: trigger the issues live and watch the anomaly counts | [`tools/mock_portal/`](tools/mock_portal/) |
 
-Management reports on this data and needs to know it can be trusted every day. You
-are the senior QA engineer who owns that question.
+## Run the test suite
 
-## Getting the data
-
-You need Docker.
+Requirements: Python 3.10+ and a reachable Postgres. The suite reads its connection **only** from the standard
+`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER` and `PGPASSWORD` environment variables, so it runs unchanged against
+any database with this schema. It connects read-only and never writes.
 
 ```bash
-docker compose up -d --wait        # the first start loads the data (a few seconds)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+export PGHOST=127.0.0.1 PGPORT=5432 PGDATABASE=fittrack PGUSER=fittrack PGPASSWORD=fittrack
+pytest
 ```
 
-| Setting  | Value       |
-| -------- | ----------- |
-| host     | `localhost` |
-| port     | `5432` — set `FITTRACK_DB_PORT=5433` before `docker compose up` if 5432 is taken |
-| database | `fittrack`  |
-| user     | `fittrack`  |
-| password | `fittrack`  |
+`pytest` is the one command. Its exit code is the verdict:
 
-`docker compose down -v` deletes the data, and the next `up` reloads it from scratch. Treat
-the four source tables as read-only; create views, schemas or tables of your own
-freely.
+| Exit code | Meaning |
+|---|---|
+| `0` | No blocking problem. Reports can go out. Known, handled issues are listed under **data-quality warnings** at the end of the output. |
+| `1` | At least one blocking check failed. Each failure prints the rule, the number of offending rows and a sample of them. |
+| `2` | A connection setting is missing (for example `PGHOST` not exported). |
 
-## The data
+Against the provided database: **43 passed, 17 warnings, exit code 0**, in about 8 seconds.
 
-**`branches`** — one row per gym. `timezone` is an IANA zone name. `opens_at` and `closes_at`
-are local opening hours and apply every day.
+### Running the database locally
 
-**`devices`** — the access-control devices: `kind` is `entrance` (turnstile in),
-`exit` (turnstile out) or `front_desk` (tablet).
+```bash
+docker compose up -d --wait                              # first start loads db/init (a few seconds)
+cp .env.example .env && source .env                      # the same PG* variables as above
+```
 
-**`members`** — one row per member: profile data (`first_name`, `last_name`,
-`email`, `date_of_birth`, `home_branch_id`, `joined_on`), plus the CRM's current
-view of the member's `membership_tier` (`basic` / `standard` / `premium`) and
-`status` (`active` / `cancelled`).
+If port 5432 is already taken by a local Postgres (it was on my machine), start it with
+`FITTRACK_DB_PORT=5433 docker compose up -d --wait` and set `PGPORT=5433`. Use `127.0.0.1` rather than
+`localhost`, so `psql` cannot reach a different server on IPv6 `::1`.
 
-**`events`** — everything that happened, from both systems.
+### Useful variations
 
-| column        | meaning |
-| ------------- | ------- |
-| `event_id`    | Primary key of the row in this database. |
-| `source_ref`  | Identifier assigned by the sending system: `crm:<n>` for CRM events, `<device_id>:<sequence>` for device events. |
-| `member_id`   | The member the event is about. |
-| `event_type`  | See below. |
-| `event_ts`    | When the event happened, as reported by the sending system. |
-| `branch_id`   | Branch where it happened. |
-| `device_id`   | Device that recorded it (empty for CRM events). |
-| `ingested_at` | When the row landed in this database. |
-| `details`     | JSON payload, per event type. |
+```bash
+pytest -m blocking                      # only the checks that gate the reports
+pytest -m warning                       # only the known-issue trackers
+pytest -k A03                           # one check, by id
+pytest tests/test_reports.py            # only the report-query tests
+pytest --junitxml=dq-results.xml        # machine-readable results for CI
+```
 
-| `event_type`             | sent by | `details` |
-| ------------------------ | ------- | --------- |
-| `membership_started`     | CRM | `{"tier": ...}` |
-| `membership_reactivated` | CRM | `{"tier": ...}` — a former member re-joins |
-| `membership_cancelled`   | CRM | `{"reason": ...}` |
-| `tier_changed`           | CRM | `{"from": ..., "to": ...}` |
-| `check_in`               | entrance turnstile | — |
-| `check_out`              | exit turnstile | — |
-| `friend_visit`           | front-desk tablet | `{"friend_name": ...}` — a friend entering with the member |
+### In CI
 
-Membership history goes back to 2021; access events cover 2024.
+[`.github/workflows/data-quality.yml`](.github/workflows/data-quality.yml) does what a CI job against every
+new load would do: it starts the database, runs `pytest` (the job fails on any blocking check), runs every
+report with `psql -f` in a read-only session the way the reviewers will, and keeps the JUnit results. To
+point it at another database, set the `PG*` variables as repository secrets instead of starting Docker.
 
-## Business rules
+## What the suite checks
 
-1. **Membership state comes from `events`.** A membership is active from
-   `membership_started` (or `membership_reactivated`) until `membership_cancelled`.
-2. **Active in a month.** A member counts as active in a month when their latest
-   membership event up to the end of that month is `membership_started` or
-   `membership_reactivated`.
-3. **A visit** starts with a `check_in` at a branch's entrance and ends with a
-   `check_out` at the same branch's exit.
-4. **Bring a friend.** A member may bring a friend along on a visit; the front desk
-   records it as a `friend_visit`. A friend can only come in together with the
-   member. Each calendar month a member may bring friends this many times,
-   depending on their tier in that month:
+Each check is one SQL query that returns the rows breaking a rule. Zero rows is a pass. Each check has a
+severity:
 
-   | tier     | friend visits per month |
-   | -------- | ----------------------- |
-   | basic    | 2 |
-   | standard | 3 |
-   | premium  | 8 |
+- **blocking**: the reports cannot be trusted even after their cleaning rules (for example an unknown
+  `event_type`, a `source_ref` shared by two different events, an access event still outside opening hours
+  after cleaning, or an invalid branch time zone). The test fails.
+- **warning**: a known issue the reports already correct for (duplicates, replays, clock skew, test cards,
+  late CRM data). The test passes and the issue is listed in the run summary, so trends stay visible without
+  blocking every run on historical data the reports already handle.
 
-5. **Local time.** Days and months are calendar days and months in the time zone of
-   the branch where the event happened.
+| File | Covers |
+|---|---|
+| `tests/test_events_contract.py` | Event types and casing, required fields, branch and device references, `source_ref` format and collisions, JSON payloads, unknown members |
+| `tests/test_access_events.py` | Retries, re-stamped replays, device clocks ahead, sequence gaps, missing check-outs, friend visits without a member, visits without an active membership, plus residual checks after cleaning |
+| `tests/test_branches_devices.py` | Valid IANA time zones, opening hours, one entrance/exit/desk per branch |
+| `tests/test_members.py` | Status and tier values, home branch, duplicate people, placeholder birth dates, `members` vs events, membership event order, late CRM data |
+| `tests/test_reports.py` | Every report runs read-only and has the agreed columns and rows; `visits_per_branch` matches an independent recount; daily and per-branch totals agree |
 
-## What to deliver
+**Proving the checks can fail.** On a scratch copy of the database I injected one problem per blocking check
+(an unknown type, a wrong-branch device, a `source_ref` collision, a 3:30am check-in, a check-out without a
+check-in, an invalid time zone). Every one failed the suite with exit code 1. See `AI_USAGE.md`.
 
-Push everything to a **GitHub repository** and send us the link. Make it public, or
-private with access granted to the reviewer named in your invitation email. We read
-the **commit history**, so commit as you go, and please don't squash.
+### Adding a check
 
-### 1. A data-quality test suite
+Append a `Check` to the `CHECKS` list of the relevant `tests/test_*.py` file (or a new `tests/test_*.py`
+with the same three-line test at the bottom):
 
-Use any language and tools you like. It must run with **one command**, exit non-zero
-when it finds a problem that should stop reports going out, and be something we could
-run in CI against every new load of this database.
+```python
+Check(
+    "A13_visit_longer_than_6h",                          # id: shown in output, usable with -k
+    "check_in followed by its check_out more than 6 h later",
+    WARNING,                                             # or BLOCKING
+    """
+    SELECT ...  -- return the violating rows; no trailing semicolon
+    """,
+),
+```
 
-### 2. `DATA_QUALITY.md`
+No other wiring is needed. The id, severity marker and summary output come from `tests/dq.py`.
 
-Your report on the data. For each issue, give:
-- what it is;
-- your evidence (the query and the count);
-- its severity;
-- which reports it affects (the required one and any bonus ones you wrote), and by
-  roughly how much;
-- the most likely cause.
+## Reports
 
-When one root cause (a single bug, a misconfiguration, or one missing piece of logic)
-explains several of the symptoms you saw, group them under it and say so. Finish with
-the questions you'd put to the teams that own the CRM and the access-control system,
-and what you'd monitor from now on.
+Each report is one self-contained Postgres query: it uses only the four source tables, needs no views or
+functions, and runs with `psql -f` in a read-only session. The counting decisions are explained in comments
+at the top of each file. In short, all of them:
 
-### 3. One report query
+1. treat rows sharing a `source_ref` as one event and keep the earliest copy (retries, and device replays
+   re-stamped at the resend time);
+2. match `event_type` case-insensitively;
+3. count only `member_id`s present in `members` (this excludes turnstile test cards);
+4. use `least(event_ts, ingested_at)` as the event time (a device clock running ahead is capped at the
+   moment the row arrived);
+5. bucket days, months and years in the local time zone of the branch where the event happened.
 
-A report is an **SQL query** that returns the report's data. Write this one to
-`reports/visits_per_branch.sql`:
+`DATA_QUALITY.md` explains why each rule exists and how much each report would be off without it.
+`profiling/05_verify_rules.sql` proves the rules work: out-of-hours access events go 3,209 → 172 → 172 → 0
+as they are applied.
 
-| columns | one row per |
-| ------- | ----------- |
-| `branch_id`, `branch_name`, `member_visits` | branch, with its members' visits in 2024 |
+## Mock portal: reproduce the issues live
 
-The file holds **one query** for Postgres 17; CTEs are fine. We run it exactly as it is,
-with `psql -f` in a read-only session, against two databases: a fresh copy of this one,
-and a different database with the same schema. So it must stand on its own and can't
-depend on tables, views or functions you created. The same applies to the bonus
-queries below.
+A small local web app that plays the two source systems. You send CRM events
+(`membership_started`, `membership_cancelled`, `tier_changed`) and access events (`check_in`, `check_out`,
+`friend_visit`), with toggles that reproduce the defects found in `DATA_QUALITY.md`, and watch them appear in a
+live table and on five anomaly cards.
 
-Treat the data as you would a production feed: decide what counts, and write down
-the decisions you made. Comments in the SQL are a good place for them.
+| Toggle | Reproduces | Card that moves |
+|---|---|---|
+| Casing bug | `CHECK_IN` instead of `check_in` | Uppercase `CHECK_IN` |
+| Duplicate `source_ref` | the same event sent twice (retry) | Duplicate `source_ref` |
+| Invalid tier name | `Platinum++` in `details` | (visible in the table) |
+| Unclosed visit | a `check_in` 12 h ago with no `check_out` | Unmatched / orphaned visits |
+| `check_out` with no `check_in` | a lost entrance event | Unmatched / orphaned visits |
+| Friend allowance breach | the member's real tier limit + 1 friend visits in one month | Friend allowance breaches |
+| Clock skew | `event_ts` 2 h ahead of `ingested_at` | Time skew |
 
-### 4. `AI_USAGE.md`
+```bash
+docker compose up -d --wait && source .env          # the database from "Running the database locally"
+pip install -r tools/mock_portal/requirements.txt
+python tools/mock_portal/app.py                      # http://127.0.0.1:5050
+```
 
-We expect you to use AI tools, and we want to understand how you work with them.
-Describe:
-- the tools you used;
-- which ideas, checks and decisions were yours and which were the AI's;
-- concrete cases where you rejected or corrected AI output, and why;
-- how you verified the SQL and code the AI wrote.
+**It never writes to the source tables.** The assignment treats them as read-only, and the test suite must keep
+reading the real load. On start the portal creates its own sandbox, `mock_portal.events`
+(`LIKE public.events INCLUDING ALL`, so same columns, types and constraints), and writes only there. Injected
+rows get `event_id >= 9,000,000,000`, and the **Delete all injected events** button removes only those. `pytest`
+results are unaffected. It reads `public.members` to look up each member's real tier. To drop the sandbox
+entirely: `psql -c "DROP SCHEMA mock_portal CASCADE"`.
 
-### 5. `README.md`
+Flask plus psycopg 3, one HTML page with Tailwind from its CDN (the page needs internet for styling). Under 150
+lines in total.
 
-Explain how to run the test suite. It must read its database connection from the
-standard Postgres environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`,
-`PGPASSWORD`), because **we will run it against a different database with the same
-schema**. Note how long you spent.
+## Repository layout
 
-### Bonus: three more report queries
+```
+reports/      the four report queries
+tests/        the data-quality suite (dq.py = check model and runner)
+profiling/    exploration and proof queries, numbered in the order I ran them, with outputs
+db/init/      provided schema and data (loaded by docker compose)
+docs/         the original assignment brief
+tools/        mock_portal: local web app to reproduce the data-quality issues live
+```
 
-Optional, and worth extra credit. Same rules as the required query, in the same
-`reports/` folder, covering 2024:
+## Time spent
 
-| file | columns | one row per |
-| ---- | ------- | ----------- |
-| `reports/active_members_monthly.sql` | `month` (`YYYY-MM`), `active_members` | month, 2024-01 … 2024-12 |
-| `reports/daily_visits.sql` | `date` (`YYYY-MM-DD`), `member_visits`, `friend_visits` | day of 2024, all branches combined (a day with no visits may be left out) |
-| `reports/friend_allowance_monthly.sql` | `month`, `avg_utilization_pct` | month, 2024-01 … 2024-12 |
-
-`avg_utilization_pct` is the average share of their friend allowance that members
-used. For every member who visited at least once in the month, take the friend visits
-they brought that month (counting at most their allowance) and divide by their
-allowance. Average across those members and express it as a percentage with one
-decimal.
-
-## Time
-
-Most people spend 3–5 hours. Please don't spend more than a day; we'd rather see a
-well-reasoned subset than an exhaustive one.
-
-## How we evaluate
-
-- **Report queries:** correctness, on this database and on a different one with the
-  same schema. Bonus queries earn extra credit; leaving them out costs nothing.
-- **The test suite:** range, rigour, and how easy it is to run and extend.
-- **`DATA_QUALITY.md`:** what you found, how you proved it, how you prioritised it,
-  and how well you explained causes.
-- **`AI_USAGE.md`:** honesty and judgment.
-- **Commit history:** how the work progressed.
-
-Questions? Reply to the invitation email — we would rather clarify than have you guess.
+About **X hours** in total: roughly X h profiling the data, X h on the report queries, X h on the test
+suite and X h writing `DATA_QUALITY.md` and the other documents.

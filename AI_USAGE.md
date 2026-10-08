@@ -4,6 +4,7 @@
 
 ## Tools
 - Claude (claude.ai chat): planning, SQL drafts, test-suite scaffolding, review of my reasoning.
+- Claude (agent with access to this repo folder): built `tools/mock_portal/` from my spec and added it to the repo, README and this log.
 
 ## Log
 
@@ -18,6 +19,8 @@
 | 7 | Verification | A sanity query "deduped check-ins = distinct sequence numbers" | Rejected as a tautology | Both sides count the same distinct source_refs. Replaced with "deduped check-ins = highest sequence number issued", which is independent evidence (gap-free counters). |
 | 8 | DATA_QUALITY.md | First draft said test cards add +53 visits to every branch, and that all 5 duplicate-email pairs were re-joiners | Corrected before publishing | Re-ran the counts: Pearl District gets +35 (it opened in May), and only 2 pairs are re-joiners; 2 were created twice on consecutive days, 1 was cancelled and re-created. Every number in the doc was then traced to a query in profiling/. |
 | 9 | Bonus report | friend_allowance_monthly first version used a correlated subquery for the tier at month end | Rewritten | It took 30 s and slowed the suite to 89 s. Rewritten as a DISTINCT ON join (0.3 s); confirmed all 12 monthly values identical before and after. |
+| 10 | Mock portal | First draft, written before the AI had seen the repo, guessed the schema: a `source_system` column, `payload` instead of `details`, psycopg2, tiers basic/plus/premium with friend limits 0/1/3, and writes into `public.events` | Changed by the AI when it was given the repo | Checked against `db/init/01_schema.sql` and `docs/ASSIGNMENT.md`: real columns are `details`/`device_id`, `event_id` has no default, tiers are basic/standard/premium with 2/3/8 friend visits. Writing to `public.events` would break the read-only rule and add fake rows to every count the test suite and `DATA_QUALITY.md` report, so the portal writes to a sandbox `mock_portal.events` (`LIKE public.events`) and marks injected rows with `event_id >= 9e9`. |
+| 11 | Mock portal | The friend-breach burst spaced its events +1 s apart, moving forward in time | Corrected | The time-skew card showed 5 instead of 1: honest rows landed a few seconds after `ingested_at`. Now the burst is spaced backwards. |
 
 ## My decisions vs. AI's
 - Visit = deduped check-in (earliest copy per source_ref), case-insensitive type; a missing check-out does not cancel a visit.
@@ -37,3 +40,4 @@
 - profiling/06_report_impact.sql measures what each issue would do to each report if left uncleaned; those numbers are the "by how much" in DATA_QUALITY.md.
 - tests/test_reports.py recomputes visits_per_branch a second, independent way (anti-join instead of DISTINCT ON) and asserts both agree.
 - Mutation test: on a scratch copy of the DB, injected one problem per blocking check (unknown type, wrong-branch device, ref collision, 3:30am check-in, check-out without check-in, invalid time zone). Every one failed the suite with exit code 1.
+- Mock portal: on a scratch Postgres loaded with `db/init/01_schema.sql`, each toggle was fired once and moved exactly its own card (1 / 1 / 2 / 1 / 1; a premium member's burst was 9 friend visits = limit 8 + 1). The `public.events` row count was unchanged, and cleanup deleted only the 19 injected rows.
