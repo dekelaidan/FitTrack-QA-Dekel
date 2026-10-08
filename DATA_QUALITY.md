@@ -297,6 +297,34 @@ process issue for branch managers.
 
 ---
 
+## Contract guards: what the suite also rules out
+
+Some failure modes did not occur in this load, but would silently corrupt the reports if they appeared in a
+future load or in another database with this schema. Each one has a check, and each check was proven to fire
+by injecting the problem into a scratch copy of the database (see `AI_USAGE.md`). All of them return
+**0 rows today**.
+
+| Area | Check | Severity | What it rules out | Why it matters to the reports |
+|---|---|---|---|---|
+| Unknown event types | `E01_unknown_event_type` | blocking | an `event_type` outside the 7 documented types, even ignoring case | the reports would silently drop (or miscount) a new kind of event |
+| | `E02_event_type_casing` | warning | a documented type in the wrong case (today: 181 `CHECK_IN`, root cause 4) | handled by `lower()`; tracked so a new offender is visible |
+| | `E11_documented_type_missing` | warning | a documented type with no rows at all | a sender that stopped, or renamed its type, would look like "zero activity" |
+| Shared `source_ref` | `E07_source_ref_collision` | blocking | rows sharing a `source_ref` with a different member, type, branch or device | dedupe keeps one row per `source_ref`; on a real collision it would delete a genuine event |
+| | `E12_source_ref_payload_collision` | blocking | rows sharing a `source_ref` with different `details` (for example two different friends) | same: they are two events, not copies |
+| | `E13_crm_source_ref_reused` | blocking | a CRM `source_ref` appearing twice | the CRM never replays (0 repeats of 1,691 refs), so a repeat means its counter collided |
+| | `E14_source_ref_copies_too_far_apart` | blocking | copies of one device `source_ref` more than 7 days apart | real replays are at most 3 d 22 h apart; a bigger gap points to a counter reset, so "keep the earliest copy" would discard a real later event |
+| Branches and devices | `E04_unknown_branch` | blocking | an event whose `branch_id` is not in `branches` | the event has no time zone, so it can't be placed on a local day and drops out of every report |
+| | `E05_device_mismatch` | blocking | an access event from an unknown device, another branch's device, or the wrong kind (a check-in from an exit) | the visit would be credited to the wrong branch, or be a phantom |
+| | `B05_device_kind_domain` | blocking | a device whose `kind` is not `entrance` / `exit` / `front_desk` | `E05` maps event types to kinds; an unknown kind breaks that mapping |
+| | *(not a check)* device → unknown branch | n/a | already enforced by the schema's foreign key `devices.branch_id REFERENCES branches` | a check for it could never fire, so none was written |
+| Opening hours after cleaning | `A10_outside_opening_hours_after_cleaning` | blocking | a member's access event still outside local opening hours **after** dedupe (root causes 1 and 6) and clock capping (root cause 5) | the cleaning rules no longer explain the data; a new kind of defect has appeared |
+| | `A13_outside_hours_unknown_members` | warning | the same, for `member_id`s not in `members` (test cards and the like) | they are excluded from reports, but a change in their pattern is worth seeing |
+
+How the opening-hours guard was derived: in the raw data, 3,209 access events fall outside opening hours.
+Deduplication removes 3,037 of them (all replay copies), and capping the time at `ingested_at` removes the last
+172 (all from D07-IN). That leaves 0 (`profiling/05_verify_rules.sql`). So any non-zero result in a future load
+is, by construction, something the rules don't yet explain.
+
 ## Questions for the CRM team
 
 1. Why are cancellations delivered in a monthly batch on the 2nd, when every other event type is near

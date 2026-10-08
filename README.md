@@ -35,7 +35,7 @@ pytest
 | `1` | At least one blocking check failed. Each failure prints the rule, the number of offending rows and a sample of them. |
 | `2` | A connection setting is missing (for example `PGHOST` not exported). |
 
-Against the provided database: **43 passed, 17 warnings, exit code 0**, in about 8 seconds.
+Against the provided database: **49 passed, 17 warnings, exit code 0**, in about 8 seconds.
 
 ### Running the database locally
 
@@ -79,15 +79,17 @@ severity:
 
 | File | Covers |
 |---|---|
-| `tests/test_events_contract.py` | Event types and casing, required fields, branch and device references, `source_ref` format and collisions, JSON payloads, unknown members |
+| `tests/test_events_contract.py` | Event types and casing (and documented types that go missing), required fields, branch and device references, `source_ref` format, collisions across members, payloads, CRM refs and replay distance, JSON payloads, unknown members |
 | `tests/test_access_events.py` | Retries, re-stamped replays, device clocks ahead, sequence gaps, missing check-outs, friend visits without a member, visits without an active membership, plus residual checks after cleaning |
-| `tests/test_branches_devices.py` | Valid IANA time zones, opening hours, one entrance/exit/desk per branch |
+| `tests/test_branches_devices.py` | Valid IANA time zones, opening hours, one entrance/exit/desk per branch, valid device kinds |
 | `tests/test_members.py` | Status and tier values, home branch, duplicate people, placeholder birth dates, `members` vs events, membership event order, late CRM data |
 | `tests/test_reports.py` | Every report runs read-only and has the agreed columns and rows; `visits_per_branch` matches an independent recount; daily and per-branch totals agree |
 
 **Proving the checks can fail.** On a scratch copy of the database I injected one problem per blocking check
 (an unknown type, a wrong-branch device, a `source_ref` collision, a 3:30am check-in, a check-out without a
-check-in, an invalid time zone). Every one failed the suite with exit code 1. See `AI_USAGE.md`.
+check-in, an invalid time zone). Every one failed the suite with exit code 1. The same was done for the second
+round of contract guards (`E11`–`E14`, `B05`, `A13`): every blocking check failed, and every warning
+recorded its injected row. See `AI_USAGE.md`.
 
 ### Adding a check
 
