@@ -34,7 +34,7 @@ share one cause; they are grouped under it.
 | 6 | Normal at-least-once delivery retries | Low | 700 `source_ref`s delivered twice, identical, within 5 min | `visits_per_branch` ~+0.5% |
 | 7 | `members` table is not maintained from the event stream | Low | 49 status and 8 tier disagreements; 2 members with no CRM history; 5 people with two member records | `active_members_monthly` off by −2 to 0 members |
 | 8 | Pearl District pre-sale sign-ups took a different code path | Low | 5 members with `home_branch_id = 9` (doesn't exist) and `status = 'Active'` | none |
-| 9 | Exit events go missing: one transmission loss plus background tailgating | Low | 27-event sequence gap on D02-OUT on 2024-08-13; 903 check-ins without check-out | none (a visit is counted on check-in) |
+| 9 | Exit events go missing: one transmission loss plus background tailgating | Low | 27-event sequence gap on D02-OUT on 2024-08-13; 892 check-ins without check-out | none (a visit is counted on check-in) |
 | 10 | Front desk records friend visits without a member check-in | Low | 55 friend visits with no matching check-in | `daily_visits` friend counts: 55 of 6,875 |
 | 11 | Small CRM data-entry defects | Low | 3 placeholder birth dates; 3 `tier_changed.from` values that don't match the previous tier | none |
 
@@ -246,10 +246,10 @@ status spelling, never migrated once the branch opened.
 
 ## 9. Missing check-outs (Low)
 
-**What.** 903 check-ins (1.3%) are not followed by a check-out of the same member. There are two causes:
+**What.** 892 check-ins (1.2%) are not followed by a check-out of the same member. There are two causes:
 - **Transmission loss.** D02-OUT (Harbor Point exit) numbered 27 events (sequence 5963–5989) on 2024-08-13
   that never arrived. That is the whole local day: no check-outs at all that day, and 27 check-ins left open.
-- **Background.** About 876 more are spread evenly across branches and months (about 10 per branch per month):
+- **Background.** The other 865 are spread evenly across branches and months (about 9 per branch per month):
   people leaving through an open gate or tailgating out.
 
 There are **no** check-outs without a check-in.
@@ -317,6 +317,7 @@ by injecting the problem into a scratch copy of the database (see `AI_USAGE.md`)
 | Branches and devices | `E04_unknown_branch` | blocking | an event whose `branch_id` is not in `branches` | the event has no time zone, so it can't be placed on a local day and drops out of every report |
 | | `E05_device_mismatch` | blocking | an access event from an unknown device, another branch's device, or the wrong kind (a check-in from an exit) | the visit would be credited to the wrong branch, or be a phantom |
 | | `B05_device_kind_domain` | blocking | a device whose `kind` is not `entrance` / `exit` / `front_desk` | `E05` maps event types to kinds; an unknown kind breaks that mapping |
+| Membership history | `M10_tier_changed_without_active_membership` | blocking | a `tier_changed` before any membership or after a cancellation | `friend_allowance_monthly` takes the tier from these events; a change outside a membership would give a member an allowance they don't have |
 | | *(not a check)* device → unknown branch | n/a | already enforced by the schema's foreign key `devices.branch_id REFERENCES branches` | a check for it could never fire, so none was written |
 | Opening hours after cleaning | `A10_outside_opening_hours_after_cleaning` | blocking | a member's access event still outside local opening hours **after** dedupe (root causes 1 and 6) and clock capping (root cause 5) | the cleaning rules no longer explain the data; a new kind of defect has appeared |
 | | `A13_outside_hours_unknown_members` | warning | the same, for `member_id`s not in `members` (test cards and the like) | they are excluded from reports, but a change in their pattern is worth seeing |
