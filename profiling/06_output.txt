@@ -1,0 +1,50 @@
+SET
+== 1. daily_visits: naive (exact type, no dedupe, all member_ids, UTC day) vs clean, worst days
+    day     | naive_member | clean_member | diff_member | naive_friend | clean_friend 
+------------+--------------+--------------+-------------+--------------+--------------
+ 2024-10-20 |         1057 |          174 |         883 |           94 |           15
+ 2024-03-20 |          778 |          197 |         581 |           77 |           17
+ 2024-12-25 |           79 |              |             |           10 |             
+ 2024-12-26 |          122 |          198 |         -76 |           10 |           20
+ 2024-04-08 |          164 |          225 |         -61 |           19 |           23
+ 2024-01-01 |          176 |          236 |         -60 |           18 |           25
+ 2024-10-07 |          232 |          283 |         -51 |           18 |           22
+ 2024-11-23 |          243 |          192 |          51 |           26 |           20
+(8 rows)
+
+== 2. daily_visits: effect of each issue on its own (rows moved or added across 2024)
+                      issue                       | rows_ 
+--------------------------------------------------+-------
+ replay copies (re-stamped)                       |  1595
+ exact retry copies                               |   369
+ CHECK_IN casing (lost by exact match)            |   181
+ test-card check-ins                              |   406
+ D07 clock: visits landing on the wrong local day |    72
+ UTC instead of local day (check-ins)             | 17598
+(6 rows)
+
+== 3. active_members_monthly: events-based (report) vs members.status vs "as known on the last day of the month"
+  month  | final_figure | if_run_at_month_end | members_status_active_today 
+---------+--------------+---------------------+-----------------------------
+ 2024-01 |          504 |                 521 |                         777
+ 2024-02 |          534 |                 544 |                         777
+ 2024-03 |          563 |                 571 |                         777
+ 2024-04 |          585 |                 600 |                         777
+ 2024-05 |          613 |                 632 |                         777
+ 2024-06 |          633 |                 650 |                         777
+ 2024-07 |          656 |                 675 |                         777
+ 2024-08 |          677 |                 690 |                         777
+ 2024-09 |          707 |                 725 |                         777
+ 2024-10 |          721 |                 745 |                         777
+ 2024-11 |          729 |                 749 |                         777
+ 2024-12 |          756 |                 772 |                         777
+(12 rows)
+
+== 4. friend_allowance_monthly: tier from events vs members.membership_tier, and naive friend counts
+                            what                             | count 
+-------------------------------------------------------------+-------
+ members whose members.membership_tier disagrees with events |     8
+ friend_visit rows, raw                                      |  7050
+ friend_visit rows, deduped                                  |  6875
+(3 rows)
+
