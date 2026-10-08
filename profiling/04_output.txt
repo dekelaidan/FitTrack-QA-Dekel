@@ -1,0 +1,161 @@
+SET
+== 1. Replay bursts: non-identical duplicate copies land in two bursts, all devices, ~07:1x UTC
+ replay_day | replayed_rows | devices | first_at |   last_at   |  min_lag   |  max_lag   
+------------+---------------+---------+----------+-------------+------------+------------
+ 2024-03-20 |          1224 |      21 | 07:11:44 | 07:18:52.05 | 00:00:00.2 | 00:00:00.2
+ 2024-10-20 |          1812 |      24 | 07:21:32 | 07:32:05.85 | 00:00:00.2 | 00:00:00.2
+(2 rows)
+
+== 2. After dedupe (earliest copy per source_ref), what is still outside opening hours?
+ device_id | outside_hours | stamped_after_ingest 
+-----------+---------------+----------------------
+ D07-IN    |           172 |                  172
+(1 row)
+
+== 3. D07-IN clock: events stamped after they were ingested, window and offset
+ device_id |       first_bad        |        last_bad        | rows_ | min_ahead | max_ahead 
+-----------+------------------------+------------------------+-------+-----------+-----------
+ D07-IN    | 2024-06-06 15:14:40+00 | 2024-08-06 07:34:00+00 |  1542 | 02:54:53  | 02:59:59
+(1 row)
+
+== 4. Events for member_ids not in members (deduped; times in branch local time)
+ member_id |     t     | rows_ | branches | earliest_local | latest_local | weekdays 
+-----------+-----------+-------+----------+----------------+--------------+----------
+    990001 | check_in  |   212 | 1,2,3,4  | 05:02:01       | 05:08:59     | Mon
+    990001 | check_out |   212 | 1,2,3,4  | 05:03:11       | 05:11:57     | Mon
+    990002 | check_in  |   194 | 5,6,7,8  | 05:02:00       | 08:08:54     | Mon
+    990002 | check_out |   194 | 5,6,7,8  | 05:03:24       | 05:11:44     | Mon
+(4 rows)
+
+== 4b. Pearl District (branch 8) activity before it opened, and members with unknown home branch
+ member_id |     event_type     |        event_ts        | home_branch_id | status 
+-----------+--------------------+------------------------+----------------+--------
+      1803 | membership_started | 2024-04-15 19:37:41+00 |              9 | Active
+      1803 | (member row)       |                        |              9 | Active
+      1806 | membership_started | 2024-04-19 19:27:04+00 |              9 | Active
+      1806 | (member row)       |                        |              9 | Active
+      1807 | membership_started | 2024-04-20 03:18:39+00 |              9 | Active
+      1807 | (member row)       |                        |              9 | Active
+      1811 | membership_started | 2024-04-23 00:45:49+00 |              9 | Active
+      1811 | (member row)       |                        |              9 | Active
+      1820 | membership_started | 2024-04-28 20:59:43+00 |              9 | Active
+      1820 | (member row)       |                        |              9 | Active
+(10 rows)
+
+== 5. Device sequence gaps (events the device numbered but we never received)
+ device_id | first_missing | last_missing | missing |      last_before_gap       |      first_after_gap       
+-----------+---------------+--------------+---------+----------------------------+----------------------------
+ D02-OUT   |          5963 |         5989 |      27 | 2024-08-13 02:12:24.345+00 | 2024-08-14 09:47:11.898+00
+(1 row)
+
+== 6. Visit pairing (deduped, real members, ts capped at ingested_at): what follows each check_in / check_out
+     t     |  next_t   | same_branch | count 
+-----------+-----------+-------------+-------
+ check_in  | (end)     |             |    16
+ check_in  | check_in  | f           |   132
+ check_in  | check_in  | t           |   744
+ check_in  | check_out | t           | 71007
+ check_out | (end)     |             |   901
+ check_out | check_in  | f           | 10787
+ check_out | check_in  | t           | 59319
+(7 rows)
+
+== 7. Check-ins with no check-out, by branch (top local days)
+ branch_id | local_day  | no_checkout 
+-----------+------------+-------------
+         2 | 2024-08-13 |          27
+(1 row)
+
+== 8. Friend visits with no member check-in at that branch in [-5 min, +30 min]
+ device_id | orphan_friend_visits 
+-----------+----------------------
+ D01-DESK  |                    7
+ D02-DESK  |                    4
+ D03-DESK  |                   13
+ D04-DESK  |                    7
+ D05-DESK  |                   10
+ D06-DESK  |                    3
+ D07-DESK  |                    8
+ D08-DESK  |                    3
+           |                   55
+(9 rows)
+
+== 9. Access activity vs membership state at the time (events = source of truth)
+      t       |           state           | rows_ | members_ | before_cancel_ingested 
+--------------+---------------------------+-------+----------+------------------------
+ check_in     | (no membership event yet) |   125 |        2 |                      0
+ check_in     | membership_cancelled      |   293 |       29 |                    169
+ check_in     | membership_reactivated    |  3385 |       51 |                      0
+ check_in     | membership_started        | 68096 |      880 |                      0
+ friend_visit | (no membership event yet) |    85 |        2 |                      0
+ friend_visit | membership_reactivated    |   368 |       24 |                      0
+ friend_visit | membership_started        |  6422 |      463 |                      0
+(7 rows)
+
+== 10. CRM: ingestion lag by event type (cancellations arrive in monthly batches)
+       event_type       | rows_ | lag_over_1d |     median_lag     |     max_lag      
+------------------------+-------+-------------+--------------------+------------------
+ membership_cancelled   |   420 |         420 | 16 days 22:26:21.5 | 32 days 01:20:19
+ membership_reactivated |    56 |           0 | 00:00:53           | 00:01:30
+ membership_started     |  1120 |           0 | 00:00:44           | 00:01:30
+ tier_changed           |    95 |           0 | 00:00:54           | 00:01:30
+(4 rows)
+
+ ingest_day_of_month | count 
+---------------------+-------
+                   2 |   420
+(1 row)
+
+== 11. members.status vs status derived from events, by when the latest event was ingested
+ crm_status |  derived  | last_event_ingested | count 
+------------+-----------+---------------------+-------
+ Active     | active    | 2024-04             |     5
+ active     | active    |                     |     2
+ active     | cancelled | 2021-04             |     1
+ active     | cancelled | 2021-05             |     1
+ active     | cancelled | 2021-06             |     1
+ active     | cancelled | 2021-07             |     3
+ active     | cancelled | 2021-08             |     3
+ active     | cancelled | 2021-09             |     1
+ active     | cancelled | 2024-12             |     8
+ active     | cancelled | 2025-01             |    16
+ cancelled  | active    | 2021-04             |     1
+ cancelled  | active    | 2023-02             |     1
+ cancelled  | active    | 2023-04             |     2
+ cancelled  | active    | 2023-05             |     1
+ cancelled  | active    | 2023-11             |     1
+ cancelled  | active    | 2024-04             |     2
+ cancelled  | active    | 2024-11             |     1
+ cancelled  | active    | 2024-12             |     6
+(18 rows)
+
+== 12. members.membership_tier vs latest tier from events; tier_changed.from vs previous tier
+               check_               | count 
+------------------------------------+-------
+ members.tier <> latest event tier  |     8
+ tier_changed.from <> previous tier |     3
+(2 rows)
+
+== 13. members profile problems
+                 issue                  | count 
+----------------------------------------+-------
+ status not lowercase/known             |     5
+ home_branch_id unknown                 |     5
+ date_of_birth = 1900-01-01 placeholder |     3
+ email shared by >1 member              |    10
+ no CRM events at all                   |     2
+(5 rows)
+
+== 14. Impact on the required report: 2024 check-ins per branch under each cleaning rule
+ branch_id |      name      | naive_exact_utc | case_fixed_local | plus_dedup | plus_real_members 
+-----------+----------------+-----------------+------------------+------------+-------------------
+         1 | Back Bay       |           10131 |            10134 |       9891 |              9838
+         2 | Harbor Point   |           10326 |            10330 |      10059 |             10006
+         3 | Lakeshore      |           11671 |            11680 |      11407 |             11354
+         4 | Riverwalk      |            9340 |             9529 |       9317 |              9264
+         5 | Union Station  |            9589 |             9599 |       9392 |              9339
+         6 | Camelback      |            8951 |             8961 |       8732 |              8679
+         7 | Mission Bay    |           10024 |            10041 |       9797 |              9744
+         8 | Pearl District |            3807 |             3820 |       3710 |              3675
+(8 rows)
+
