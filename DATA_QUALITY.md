@@ -17,7 +17,7 @@ guarded by the test suite in `tests/`.
 **In the test suite**, every issue below is a *warning*, because all four reports already correct for it.
 The suite's *blocking* checks are the ones that would mean the cleaning rules no longer hold (for example an
 unknown event type, a `source_ref` shared by two different events, or an access event still outside opening
-hours after cleaning). On this database the suite passes with 17 warnings. See the README for the reasoning.
+hours after cleaning). On this database the suite passes with 18 warnings. See the README for the reasoning.
 
 **Root causes first.** Several symptoms that looked like separate problems during profiling turned out to
 share one cause; they are grouped under it.
@@ -87,8 +87,9 @@ of the night.
   23.8%.
 - `active_members_monthly`: not affected (CRM events are not replayed).
 
-**Handling.** All reports keep the **earliest** copy per `source_ref`: `DISTINCT ON (source_ref) … ORDER BY
-event_ts, event_id`.
+**Handling.** All reports keep the **earliest** copy per `source_ref` (`ROW_NUMBER()` / `DISTINCT ON` ordered by
+`event_ts, event_id`). Test `A14_duplicate_burst` warns when more than 100 extra copies land on one UTC day.
+On this load it flags exactly the two replay days.
 
 **Most likely cause.** A store-and-forward bug in the access-control gateway or device firmware. On reconnect
 (or after a scheduled job: both bursts are on the 20th, at a similar time), it re-sends its buffer, and
@@ -366,7 +367,7 @@ are listed in the run summary. In addition I would alert on trends, not just pre
 
 | Monitor | Why | Alert when |
 |---|---|---|
-| Replayed `source_ref`s per day (`A02`) | Root cause 1 can strike again | any new replay burst |
+| Duplicate copies per ingestion day (`A14`), with replays detailed by `A02` | Root cause 1 can strike again | more than 100 extra copies on one UTC day. The baseline is a median of 2 and a worst normal day of 7; the two 2024 bursts were 1,226 and 1,817 |
 | Exact retries per day (`A01`) | Normal, but a jump means a sender is unhealthy | > 3× the trailing 30-day average |
 | Events with `event_ts > ingested_at` (`A03`) | A device clock or time zone went wrong | any row in the latest load |
 | Sequence gaps per device (`A04`) | Lost events | any new gap |
