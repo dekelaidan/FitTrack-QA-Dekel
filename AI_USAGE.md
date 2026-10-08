@@ -16,6 +16,8 @@
 | 5 | Profiling | First guess: fractional seconds are a fingerprint of a different code path | Partly rejected | Exit turnstiles always send milliseconds (~97% of check_outs), so fractions are normal there. They only mark the replayed copies on entrance and desk devices. |
 | 6 | Test suite | Make "device clock ahead" (event_ts > ingested_at) a blocking check | Changed to warning | The visits report already corrects it with least(event_ts, ingested_at). A blocking check on historic, already-handled data would fail every CI run forever. Blocking is reserved for problems the reports cannot absorb; a residual check (anything still outside opening hours AFTER cleaning) is blocking instead. |
 | 7 | Verification | A sanity query "deduped check-ins = distinct sequence numbers" | Rejected as a tautology | Both sides count the same distinct source_refs. Replaced with "deduped check-ins = highest sequence number issued", which is independent evidence (gap-free counters). |
+| 8 | DATA_QUALITY.md | First draft said test cards add +53 visits to every branch, and that all 5 duplicate-email pairs were re-joiners | Corrected before publishing | Re-ran the counts: Pearl District gets +35 (it opened in May), and only 2 pairs are re-joiners; 2 were created twice on consecutive days, 1 was cancelled and re-created. Every number in the doc was then traced to a query in profiling/. |
+| 9 | Bonus report | friend_allowance_monthly first version used a correlated subquery for the tier at month end | Rewritten | It took 30 s and slowed the suite to 89 s. Rewritten as a DISTINCT ON join (0.3 s); confirmed all 12 monthly values identical before and after. |
 
 ## My decisions vs. AI's
 - Visit = deduped check-in (earliest copy per source_ref), case-insensitive type; a missing check-out does not cancel a visit.
@@ -23,10 +25,15 @@
 - Event time = least(event_ts, ingested_at), so fast device clocks are corrected without naming a device.
 - Years, months and days are bucketed in the branch's IANA time zone, as half-open ranges.
 - Visits by members whose membership was cancelled at the time are counted (the report counts visits that happened); flagged for the CRM team.
+- Tier "in that month" for the friend allowance = tier in force at the end of the month (latest started/reactivated tier or tier_changed.to); members.membership_tier only as a fallback for members with no tier events.
+- Friend visits are counted even without a matching member check-in (the friend came in; the missing check-in is the defect).
+- Months and days are bucketed by the local time of the branch where each event happened, including CRM events.
 - Severity rule: blocking = the reports cannot be trusted even after their cleaning rules; warning = known and handled.
 
 ## How I verified AI-written SQL and code
 - Every profiling count was re-run and compared with the earlier query outputs saved in profiling/.
 - profiling/05_verify_rules.sql: out-of-hours access events drop 3,209 -> 172 -> 172 -> 0 as each rule is applied; deduped check-ins equal each entrance's highest sequence number.
+- Bonus reports cross-checked: the daily_visits total (71,899) equals the visits_per_branch total; monthly reports return exactly 2024-01 to 2024-12.
+- profiling/06_report_impact.sql measures what each issue would do to each report if left uncleaned; those numbers are the "by how much" in DATA_QUALITY.md.
 - tests/test_reports.py recomputes visits_per_branch a second, independent way (anti-join instead of DISTINCT ON) and asserts both agree.
 - Mutation test: on a scratch copy of the DB, injected one problem per blocking check (unknown type, wrong-branch device, ref collision, 3:30am check-in, check-out without check-in, invalid time zone). Every one failed the suite with exit code 1.
