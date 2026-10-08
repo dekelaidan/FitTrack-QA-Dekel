@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: fittrack
+      POSTGRES_USER: fittrack
+      POSTGRES_PASSWORD: fittrack
+    ports:
+      - "${FITTRACK_DB_PORT:-5432}:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - fittrack-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U fittrack -d fittrack"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  fittrack-data:
