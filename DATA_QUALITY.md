@@ -322,6 +322,11 @@ by injecting the problem into a scratch copy of the database (see `AI_USAGE.md`)
 | Opening hours after cleaning | `A10_outside_opening_hours_after_cleaning` | blocking | a member's access event still outside local opening hours **after** dedupe (root causes 1 and 6) and clock capping (root cause 5) | the cleaning rules no longer explain the data; a new kind of defect has appeared |
 | | `A13_outside_hours_unknown_members` | warning | the same, for `member_id`s not in `members` (test cards and the like) | they are excluded from reports, but a change in their pattern is worth seeing |
 
+**Independent review.** The finished suite was also reviewed by a second AI tool (Gemini), and each of its 11
+suggestions was checked against the data. That review led to `M10` (added), a corrected description for
+`A03` (it covers CRM clocks as well as devices) and the B03 assumption comment; the other 8 suggestions were
+disproved and not applied. Details in `AI_USAGE.md`.
+
 How the opening-hours guard was derived: in the raw data, 3,209 access events fall outside opening hours.
 Deduplication removes 3,037 of them (all replay copies), and capping the time at `ingested_at` removes the last
 172 (all from D07-IN). That leaves 0 (`profiling/05_verify_rules.sql`). So any non-zero result in a future load

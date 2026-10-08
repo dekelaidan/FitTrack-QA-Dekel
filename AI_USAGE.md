@@ -5,6 +5,7 @@
 ## Tools
 - Claude (claude.ai chat): planning, SQL drafts, test-suite scaffolding, review of my reasoning.
 - Claude (agent with access to this repo folder): built `tools/mock_portal/` from my spec and added it to the repo, README and this log.
+- Gemini: independent second-opinion review of the finished test suite (see "Cross-check with a second AI" below and log entry #17).
 
 ## Log
 
@@ -26,8 +27,28 @@
 | 14 | Test suite | Threshold for E14 (copies of one source_ref too far apart) | Set to 7 days from the data | The longest real replay gap is 3 d 22 h (profiling/02 B), so 7 days leaves headroom for a normal replay while still catching a counter reset. |
 | 15 | Test suite | I proposed six extra validations: casing drift, replay bursts above a threshold, future timestamps, late CRM cancellations, orphaned access events, sequence gaps. The AI mapped them to the suite first | Accepted; 1 of 6 added | 5 already existed: E02 (casing; an undocumented type in any case is caught by E01), A03 (future timestamps, with a 1-minute tolerance; the same 1,542 rows as the strict `event_ts > ingested_at`), M09 (late CRM, per event type, so cancellations show up separately), E10 (orphaned member_ids on all events, including check-ins), A04 (sequence gaps). Only the threshold-based burst alert was new: added A14. |
 | 16 | Test suite | My threshold for A14: more than 100 duplicate copies per day | Kept, after measuring the baseline | Extra copies per UTC ingestion day: median 2, worst normal day 7, replay days 1,226 and 1,817. 100 is about 14x the worst normal day and far below a real burst. Kept as a warning, like A01/A02, because the reports dedupe; it flags exactly the two 2024 bursts. |
-| 17 | External review | I exported the whole suite and had a second AI tool review it, then asked Claude to check each of its 11 suggestions against the data before changing anything | 2 accepted, 1 clarified, 8 rejected | **Accepted:** M10 (tier_changed outside an active membership was a real gap; M07 only orders start/reactivate/cancel; 0 rows today, injected cases fail); a comment on B03 that it assumes one device per kind. **Clarified:** "add CRM future-timestamp check": A03 already covers CRM rows (no device filter); description now says so. **Rejected, with evidence:** A05 partition by branch (same 892 either way, and it would hide a check-in followed by a check-out at another branch); A06 clock "bug" (capping is what fixes it: 193 orphans on raw timestamps vs 55 capped); M08 tie risk (0 same-timestamp CRM pairs, and event_id follows ingestion order); A03 1 -> 2 min (0 rows between 0 and 2 min; ingestion lag can only push ingested_at later, never cause a false positive); M07 "misses double cancellations" (cancel after cancel is already flagged); E14 to warning (on a counter reset, keeping the earliest copy *deletes* a real later event, so reports are not protected); A15 negative duration (its query returns 2,311 normal same-day revisits; A12 already covers exits without entries); a report test asserting Pearl District > 3,000 visits (a hard-coded number would fail on the reviewers' other database). |
+| 17 | External review (Gemini) | I exported the whole suite and had Gemini review it, then asked Claude to check each of its 11 suggestions against the data before changing anything | 2 accepted, 1 clarified, 8 rejected | **Accepted:** M10 (tier_changed outside an active membership was a real gap; M07 only orders start/reactivate/cancel; 0 rows today, injected cases fail); a comment on B03 that it assumes one device per kind. **Clarified:** "add CRM future-timestamp check": A03 already covers CRM rows (no device filter); description now says so. **Rejected, with evidence:** A05 partition by branch (same 892 either way, and it would hide a check-in followed by a check-out at another branch); A06 clock "bug" (capping is what fixes it: 193 orphans on raw timestamps vs 55 capped); M08 tie risk (0 same-timestamp CRM pairs, and event_id follows ingestion order); A03 1 -> 2 min (0 rows between 0 and 2 min; ingestion lag can only push ingested_at later, never cause a false positive); M07 "misses double cancellations" (cancel after cancel is already flagged); E14 to warning (on a counter reset, keeping the earliest copy *deletes* a real later event, so reports are not protected); A15 negative duration (its query returns 2,311 normal same-day revisits; A12 already covers exits without entries); a report test asserting Pearl District > 3,000 visits (a hard-coded number would fail on the reviewers' other database). |
 | 18 | DATA_QUALITY.md | (my own document) said 903 check-ins have no check-out | Corrected to 892 | Found while verifying the review's A05 claim: the per-branch sums of A05 and profiling 04 §6 both give 892. 903 had been carried over from an earlier, unfiltered count. Background share corrected to 865 (about 9 per branch per month). |
+
+## Cross-check with a second AI (Gemini)
+
+Once the suite was finished I exported every check (code and SQL) and asked **Gemini** to review it independently:
+SQL correctness, false positives and negatives, severities, missing checks, and the strength of the report tests.
+I then had Claude test each of Gemini's 11 suggestions against the data before anything was changed.
+
+| Outcome | Count | What |
+|---|---|---|
+| Test fixed | 1 | **A03_clock_ahead**: its description said it only covered *device* clocks. It has no device filter, so it already checks CRM timestamps too. Gemini's "add a CRM clock-skew check" request exposed the wrong description, now fixed. |
+| Test added | 1 | **M10_tier_changed_without_active_membership** (blocking): a real gap Gemini found. M07 checks the order of start/reactivate/cancel but ignored `tier_changed`. 0 rows today; two injected cases fail the suite. |
+| Comment added | 1 | **B03**: documents the one-device-per-kind assumption. |
+| Rejected | 8 | Each disproved with a measurement; see entry #17 (e.g. its proposed negative-duration check returns 2,311 false positives, and its proposed report test hard-codes a count that would fail on another database). |
+
+Checking Gemini's A05 claim also uncovered an error in my own DATA_QUALITY.md (903 instead of 892 check-ins without
+a check-out), now corrected (entry #18).
+
+**What I took from it:** a second AI is useful as a source of hypotheses, not of verdicts. Two of eleven
+suggestions held up, and only because each one was checked against the data. Applied blindly, its severity
+change (E14) and its hard-coded report test would have made the suite weaker.
 
 ## My decisions vs. AI's
 - Visit = deduped check-in (earliest copy per source_ref), case-insensitive type; a missing check-out does not cancel a visit.
