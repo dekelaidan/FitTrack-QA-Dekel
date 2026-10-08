@@ -1,0 +1,23 @@
+SET
+== A. Access events outside local opening hours, as each rule is applied (last line must be 0)
+ step |              rule_applied              | outside_opening_hours 
+------+----------------------------------------+-----------------------
+    1 | raw event_ts                           |                  3209
+    2 | + rule 1: dedupe on source_ref         |                   172
+    3 | + rule 2: real members only            |                   172
+    4 | + rule 3: least(event_ts, ingested_at) |                     0
+(4 rows)
+
+== B. Rule 1 cross-check: deduped check-ins per entrance = highest sequence number it issued (diff must be 0)
+ device_id | deduped_check_ins | max_sequence | diff 
+-----------+-------------------+--------------+------
+ D01-IN    |              9891 |         9891 |    0
+ D02-IN    |             10059 |        10059 |    0
+ D03-IN    |             11407 |        11407 |    0
+ D04-IN    |              9317 |         9317 |    0
+ D05-IN    |              9392 |         9392 |    0
+ D06-IN    |              8732 |         8732 |    0
+ D07-IN    |              9797 |         9797 |    0
+ D08-IN    |              3710 |         3710 |    0
+(8 rows)
+
