@@ -1,0 +1,228 @@
+== A. CHECK_IN uppercase: which devices, which days
+ device_id | local_day  | count 
+-----------+------------+-------
+ D04-IN    | 2024-04-08 |    35
+ D04-IN    | 2024-04-09 |    27
+ D04-IN    | 2024-04-10 |    23
+ D04-IN    | 2024-04-11 |    34
+ D04-IN    | 2024-04-12 |    19
+ D04-IN    | 2024-04-13 |    25
+ D04-IN    | 2024-04-14 |    18
+(7 rows)
+
+== A2. Are CHECK_IN rows also present as check_in (same source_ref)?
+ upper_with_lower_twin 
+-----------------------
+                     0
+(1 row)
+
+== B. Duplicate source_refs: identical payload (retry) vs different payload (ref reuse)
+  sender  | n | identical | refs |    max_ts_spread    |  max_ingest_spread  
+----------+---+-----------+------+---------------------+---------------------
+ D01-DESK | 2 | f         |   21 | 3 days 19:53:14.1   | 3 days 19:52:51.3
+ D01-DESK | 2 | t         |    5 | 00:00:00            | 00:04:32
+ D01-IN   | 2 | f         |  202 | 3 days 22:05:14.35  | 3 days 22:05:03.55
+ D01-IN   | 2 | t         |   39 | 00:00:00            | 00:04:49
+ D01-IN   | 3 | f         |    1 | 2 days 15:46:21.2   | 2 days 15:46:20.4
+ D01-OUT  | 2 | f         |  200 | 3 days 21:05:18.765 | 3 days 21:04:55.965
+ D01-OUT  | 2 | t         |   50 | 00:00:00            | 00:04:59
+ D01-OUT  | 3 | f         |    2 | 3 days 13:33:22.582 | 3 days 13:33:14.782
+ D02-DESK | 2 | f         |   17 | 3 days 17:13:20.3   | 3 days 17:13:06.5
+ D02-DESK | 2 | t         |    4 | 00:00:00            | 00:02:39
+ D02-IN   | 2 | f         |  218 | 3 days 22:17:57     | 3 days 22:17:35.2
+ D02-IN   | 2 | t         |   53 | 00:00:00            | 00:04:57
+ D02-OUT  | 2 | f         |  211 | 3 days 21:44:57.708 | 3 days 21:44:54.908
+ D02-OUT  | 2 | t         |   41 | 00:00:00            | 00:04:50
+ D02-OUT  | 3 | f         |    3 | 3 days 07:21:07.93  | 3 days 07:20:55.13
+ D03-DESK | 2 | f         |   22 | 3 days 08:48:54.4   | 3 days 08:48:38.6
+ D03-DESK | 2 | t         |    6 | 00:00:00            | 00:03:05
+ D03-IN   | 2 | f         |  226 | 3 days 21:09:29.1   | 3 days 21:09:24.3
+ D03-IN   | 2 | t         |   43 | 00:00:00            | 00:04:57
+ D03-IN   | 3 | f         |    2 | 3 days 06:12:37.4   | 3 days 06:12:13.6
+ D03-OUT  | 2 | f         |  223 | 3 days 20:16:38.316 | 3 days 20:16:35.516
+ D03-OUT  | 2 | t         |   42 | 00:00:00            | 00:04:54
+ D03-OUT  | 3 | f         |    1 | 18:53:11.049        | 18:53:09.249
+ D04-DESK | 2 | f         |   13 | 3 days 20:25:51.25  | 3 days 20:25:31.45
+ D04-DESK | 2 | t         |    5 | 00:00:00            | 00:05:00
+ D04-IN   | 2 | f         |  171 | 3 days 20:43:32.85  | 3 days 20:43:16.05
+ D04-IN   | 2 | t         |   39 | 00:00:00            | 00:04:48
+ D04-IN   | 3 | f         |    1 | 1 day 10:34:55.65   | 1 day 10:34:50.85
+ D04-OUT  | 2 | f         |  171 | 3 days 19:45:01.677 | 3 days 19:44:40.877
+ D04-OUT  | 2 | t         |   52 | 00:00:00            | 00:04:59
+ D05-DESK | 2 | f         |   17 | 3 days 16:45:14.95  | 3 days 16:44:54.15
+ D05-DESK | 2 | t         |    8 | 00:00:00            | 00:04:47
+ D05-IN   | 2 | f         |  174 | 3 days 19:55:05.4   | 3 days 19:54:53.6
+ D05-IN   | 2 | t         |   33 | 00:00:00            | 00:04:52
+ D05-OUT  | 2 | f         |  172 | 3 days 19:00:12.343 | 3 days 19:00:05.543
+ D05-OUT  | 2 | t         |   47 | 00:00:00            | 00:04:56
+ D06-DESK | 2 | f         |   21 | 3 days 16:57:52.45  | 3 days 16:57:49.65
+ D06-DESK | 2 | t         |    1 | 00:00:00            | 00:00:52
+ D06-IN   | 2 | f         |  177 | 3 days 19:17:03.4   | 3 days 19:16:45.6
+ D06-IN   | 2 | t         |   44 | 00:00:00            | 00:04:53
+ D06-IN   | 3 | f         |    4 | 2 days 13:29:48.65  | 2 days 13:29:47.85
+ D06-OUT  | 2 | f         |  178 | 3 days 18:30:45.017 | 3 days 18:30:36.217
+ D06-OUT  | 2 | t         |   45 | 00:00:00            | 00:04:59
+ D06-OUT  | 3 | f         |    1 | 05:09:46.527        | 05:09:43.727
+ D07-DESK | 2 | f         |   20 | 3 days 16:03:19.4   | 3 days 16:02:55.6
+ D07-DESK | 2 | t         |    7 | 00:00:00            | 00:03:09
+ D07-IN   | 2 | f         |  197 | 3 days 19:10:28.45  | 3 days 19:10:06.65
+ D07-IN   | 2 | t         |   47 | 00:00:00            | 00:04:54
+ D07-OUT  | 2 | f         |  194 | 3 days 18:04:05.252 | 3 days 18:03:44.452
+ D07-OUT  | 2 | t         |   44 | 00:00:00            | 00:04:51
+ D07-OUT  | 3 | f         |    2 | 1 day 07:35:40.725  | 1 day 07:35:31.925
+ D08-DESK | 2 | f         |    6 | 3 days 17:02:12.4   | 3 days 17:01:59.6
+ D08-DESK | 2 | t         |    2 | 00:00:00            | 00:01:53
+ D08-IN   | 2 | f         |   83 | 3 days 19:07:47.15  | 3 days 19:07:45.35
+ D08-IN   | 2 | t         |   23 | 00:00:00            | 00:05:00
+ D08-IN   | 3 | f         |    2 | 1 day 12:27:08.9    | 1 day 12:27:07.1
+ D08-OUT  | 2 | f         |   82 | 3 days 17:55:11.735 | 3 days 17:54:51.935
+ D08-OUT  | 2 | t         |   20 | 00:00:00            | 00:04:53
+ D08-OUT  | 3 | f         |    1 | 2 days 10:26:27.665 | 2 days 10:26:03.865
+(59 rows)
+
+== C. Events ingested before they happened: by sender and gap size
+ sender | ahead_by | count |          min           |          max           
+--------+----------+-------+------------------------+------------------------
+ D07-IN | 02:59:00 |  1538 | 2024-06-06 15:14:40+00 | 2024-08-06 07:34:00+00
+ D07-IN | 02:58:00 |     2 | 2024-07-09 05:12:53+00 | 2024-07-29 18:37:35+00
+ D07-IN | 02:54:00 |     1 | 2024-06-06 23:14:47+00 | 2024-06-06 23:14:47+00
+ D07-IN | 02:55:00 |     1 | 2024-06-21 17:13:16+00 | 2024-06-21 17:13:16+00
+(4 rows)
+
+== D. Late arrivals (> 1 day lag): by sender and month
+ sender |  month  | count |     max_lag      
+--------+---------+-------+------------------
+ crm    | 2024-10 |    25 | 31 days 21:46:46
+ crm    | 2023-11 |    24 | 30 days 19:50:52
+ crm    | 2024-11 |    20 | 30 days 13:36:15
+ crm    | 2024-05 |    19 | 27 days 20:13:33
+ crm    | 2023-08 |    19 | 29 days 20:30:26
+ crm    | 2024-07 |    18 | 31 days 21:12:01
+ crm    | 2024-06 |    17 | 30 days 01:29:02
+ crm    | 2024-09 |    17 | 26 days 20:14:51
+ crm    | 2024-01 |    17 | 30 days 17:28:11
+ crm    | 2024-12 |    16 | 32 days 01:20:19
+ crm    | 2023-06 |    16 | 25 days 20:03:28
+ crm    | 2024-04 |    15 | 30 days 21:37:09
+ crm    | 2024-08 |    14 | 32 days 00:56:32
+ crm    | 2023-09 |    10 | 29 days 13:26:06
+ crm    | 2023-05 |    10 | 30 days 00:20:59
+ crm    | 2024-02 |    10 | 29 days 19:48:14
+ crm    | 2023-04 |     9 | 29 days 11:21:17
+ crm    | 2022-09 |     8 | 27 days 15:36:53
+ crm    | 2022-03 |     8 | 29 days 11:27:10
+ crm    | 2022-07 |     8 | 31 days 11:44:58
+ crm    | 2023-02 |     8 | 27 days 18:08:04
+ crm    | 2023-03 |     8 | 30 days 14:07:38
+ crm    | 2023-12 |     8 | 28 days 18:22:25
+ crm    | 2024-03 |     8 | 29 days 17:08:37
+ crm    | 2021-10 |     7 | 25 days 21:18:41
+(25 rows)
+
+== E. Check-ins vs check-outs per branch per local month
+ branch_id |  month  | ins | outs 
+-----------+---------+-----+------
+         2 | 2024-08 | 791 |  756
+(1 row)
+
+== F. Access events outside local opening hours, by branch/device
+ device_id | count 
+-----------+-------
+ D07-IN    |   370
+ D03-IN    |   228
+ D03-OUT   |   224
+ D02-IN    |   218
+ D02-OUT   |   214
+ D01-IN    |   203
+ D01-OUT   |   202
+ D07-OUT   |   196
+ D06-IN    |   181
+ D06-OUT   |   179
+ D05-IN    |   174
+ D05-OUT   |   172
+ D04-IN    |   172
+ D04-OUT   |   171
+ D08-IN    |    85
+ D08-OUT   |    83
+ D03-DESK  |    22
+ D01-DESK  |    21
+ D06-DESK  |    21
+ D07-DESK  |    20
+ D05-DESK  |    17
+ D02-DESK  |    17
+ D04-DESK  |    13
+ D08-DESK  |     6
+(24 rows)
+
+== G. Access events before branch opened
+ branch_id | opened_on  | count |          min           
+-----------+------------+-------+------------------------
+         8 | 2024-05-01 |     5 | 2024-04-15 19:37:41+00
+(1 row)
+
+== H. Fractional-second timestamps, by sender and type
+  sender  |  event_type  | count 
+----------+--------------+-------
+ D03-OUT  | check_out    | 11346
+ D02-OUT  | check_out    |  9983
+ D01-OUT  | check_out    |  9831
+ D07-OUT  | check_out    |  9752
+ D05-OUT  | check_out    |  9317
+ D04-OUT  | check_out    |  9241
+ D06-OUT  | check_out    |  8670
+ D08-OUT  | check_out    |  3666
+ D03-IN   | check_in     |   218
+ D02-IN   | check_in     |   204
+ D01-IN   | check_in     |   195
+ D07-IN   | check_in     |   185
+ D06-IN   | check_in     |   174
+ D04-IN   | check_in     |   165
+ D05-IN   | check_in     |   161
+ D08-IN   | check_in     |    82
+ D03-DESK | friend_visit |    22
+ D01-DESK | friend_visit |    21
+ D07-DESK | friend_visit |    20
+ D06-DESK | friend_visit |    19
+ D05-DESK | friend_visit |    16
+ D02-DESK | friend_visit |    16
+ D04-DESK | friend_visit |    10
+ D08-DESK | friend_visit |     6
+(24 rows)
+
+== I. Event member integrity
+ null_member | unknown_member 
+-------------+----------------
+           0 |            828
+(1 row)
+
+== J. Members: profile sanity
+ members | dup_emails | null_email | bad_dob | null_joined | bad_home_branch 
+---------+------------+------------+---------+-------------+-----------------
+    1122 |          5 |          0 |       3 |           0 |               5
+(1 row)
+
+ membership_tier |  status   | count 
+-----------------+-----------+-------
+ basic           | active    |   266
+ basic           | Active    |     4
+ basic           | cancelled |   125
+ premium         | active    |   206
+ premium         | cancelled |    90
+ standard        | active    |   300
+ standard        | Active    |     1
+ standard        | cancelled |   130
+(8 rows)
+
+== K. members.status vs latest membership event
+  status   |      latest_event      | count 
+-----------+------------------------+-------
+ active    | membership_cancelled   |    34
+ active    | membership_reactivated |    33
+ active    | membership_started     |   703
+ active    | (none)                 |     2
+ Active    | membership_started     |     5
+ cancelled | membership_cancelled   |   330
+ cancelled | membership_reactivated |     9
+ cancelled | membership_started     |     6
+(8 rows)
+
