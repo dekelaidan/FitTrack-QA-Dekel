@@ -1,0 +1,45 @@
+name: data-quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  data-quality:
+    runs-on: ubuntu-latest
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: fittrack
+      PGUSER: fittrack
+      PGPASSWORD: fittrack
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the database (loads db/init on first start)
+        run: docker compose up -d --wait
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the data-quality suite (fails the job on any blocking check)
+        run: pytest --junitxml=dq-results.xml
+
+      - name: Run every report read-only, exactly as the reviewers will
+        run: |
+          for f in reports/*.sql; do
+            echo "== $f"
+            PGOPTIONS="-c default_transaction_read_only=on" psql -v ON_ERROR_STOP=1 -P pager=off -f "$f" | tail -n 5
+          done
+
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dq-results
+          path: dq-results.xml
