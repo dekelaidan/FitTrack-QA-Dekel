@@ -134,6 +134,22 @@ CHECKS = [
         """,
     ),
     Check(
+        "A13_outside_hours_unknown_members",
+        "after dedupe and clock capping, access event by a member_id NOT in members still outside opening hours",
+        WARNING,
+        """
+        SELECT d.event_id, d.member_id, d.device_id, lower(d.event_type) AS t,
+               (least(d.event_ts, d.ingested_at) AT TIME ZONE b.timezone) AS local_ts
+        FROM (SELECT DISTINCT ON (source_ref) * FROM events
+              WHERE lower(event_type) IN ('check_in', 'check_out', 'friend_visit')
+              ORDER BY source_ref, event_ts, event_id) d
+        JOIN branches b ON b.branch_id = d.branch_id
+        WHERE NOT EXISTS (SELECT 1 FROM members m WHERE m.member_id = d.member_id)
+          AND ((least(d.event_ts, d.ingested_at) AT TIME ZONE b.timezone)::time <  b.opens_at
+            OR (least(d.event_ts, d.ingested_at) AT TIME ZONE b.timezone)::time >= b.closes_at)
+        """,
+    ),
+    Check(
         "A11_access_before_branch_opened",
         "access event at a branch before its opened_on date (local)",
         BLOCKING,

@@ -40,6 +40,16 @@ CHECKS = [
             OR count(*) FILTER (WHERE d.kind = 'front_desk') <> 1
         """,
     ),
+    Check(
+        "B05_device_kind_domain",
+        "device kind missing or not entrance / exit / front_desk",
+        BLOCKING,
+        """
+        SELECT device_id, branch_id, kind
+        FROM devices
+        WHERE kind IS NULL OR kind NOT IN ('entrance', 'exit', 'front_desk')
+        """,
+    ),
 ]
 
 

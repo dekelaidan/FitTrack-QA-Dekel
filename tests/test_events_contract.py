@@ -121,6 +121,54 @@ CHECKS = [
            OR (lower(event_type) = 'friend_visit' AND nullif(trim(details->>'friend_name'), '') IS NULL)
         """,
     ),
+    # --- Added after the first suite: closing gaps in the event-type and source_ref checks ---
+    Check(
+        "E11_documented_type_missing",
+        "a documented event_type has no rows at all (a sender may have stopped or renamed it)",
+        WARNING,
+        f"""
+        SELECT t.event_type
+        FROM unnest(ARRAY[{sql_list(EVENT_TYPES)}]) AS t(event_type)
+        WHERE NOT EXISTS (SELECT 1 FROM events e WHERE lower(e.event_type) = t.event_type)
+        """,
+    ),
+    Check(
+        "E12_source_ref_payload_collision",
+        "rows sharing a source_ref carry different details: they are different events, not copies",
+        BLOCKING,
+        """
+        SELECT source_ref, count(*) AS rows_, count(DISTINCT coalesce(details::text, '')) AS payloads
+        FROM events
+        GROUP BY source_ref
+        HAVING count(DISTINCT coalesce(details::text, '')) > 1
+        """,
+    ),
+    Check(
+        "E13_crm_source_ref_reused",
+        "a CRM source_ref appears more than once (the CRM does not replay; a repeat means its counter collided)",
+        BLOCKING,
+        f"""
+        SELECT source_ref, count(*) AS rows_, count(DISTINCT event_ts) AS timestamps,
+               string_agg(DISTINCT event_type, ',') AS types
+        FROM events
+        WHERE event_type IN ({sql_list(CRM_TYPES)})
+        GROUP BY source_ref
+        HAVING count(*) > 1
+        """,
+    ),
+    Check(
+        "E14_source_ref_copies_too_far_apart",
+        "copies of one device source_ref are more than 7 days apart: too far for a buffer replay, likely a counter reset",
+        BLOCKING,
+        """
+        SELECT source_ref, count(*) AS rows_, min(event_ts) AS first_ts, max(event_ts) AS last_ts,
+               max(event_ts) - min(event_ts) AS spread
+        FROM events
+        WHERE device_id IS NOT NULL
+        GROUP BY source_ref
+        HAVING max(event_ts) - min(event_ts) > interval '7 days'
+        """,
+    ),
     Check(
         "E10_unknown_member",
         "events for member_ids not in members (here: turnstile test cards); reports exclude them",
