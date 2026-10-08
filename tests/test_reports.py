@@ -8,7 +8,11 @@ REPORTS = Path(__file__).resolve().parent.parent / "reports"
 # file -> expected columns, in order
 EXPECTED_COLUMNS = {
     "visits_per_branch.sql": ["branch_id", "branch_name", "member_visits"],
+    "active_members_monthly.sql": ["month", "active_members"],
+    "daily_visits.sql": ["date", "member_visits", "friend_visits"],
+    "friend_allowance_monthly.sql": ["month", "avg_utilization_pct"],
 }
+MONTHS_2024 = [f"2024-{m:02d}" for m in range(1, 13)]
 
 
 def run_report(db, name):
@@ -58,3 +62,35 @@ def test_visits_per_branch_matches_independent_count(db):
         GROUP BY b.branch_id
     """).fetchall())
     assert {r[0]: r[2] for r in rows} == expected
+
+
+@pytest.mark.blocking
+@pytest.mark.parametrize("name", ["active_members_monthly.sql", "friend_allowance_monthly.sql"])
+def test_monthly_reports_cover_every_month_of_2024(db, name):
+    _, rows = run_report(db, name)
+    assert [r[0] for r in rows] == MONTHS_2024
+
+
+@pytest.mark.blocking
+def test_friend_allowance_is_a_percentage(db):
+    _, rows = run_report(db, "friend_allowance_monthly.sql")
+    for month, pct in rows:
+        assert pct is None or 0 <= pct <= 100, (month, pct)
+        assert pct is None or pct == round(pct, 1), (month, pct)
+
+
+@pytest.mark.blocking
+def test_daily_visits_is_2024_and_unique_per_day(db):
+    _, rows = run_report(db, "daily_visits.sql")
+    dates = [r[0] for r in rows]
+    assert len(dates) == len(set(dates))
+    assert all("2024-01-01" <= d <= "2024-12-31" for d in dates)
+    assert all(mv >= 0 and fv >= 0 and (mv + fv) > 0 for _, mv, fv in rows)
+
+
+@pytest.mark.blocking
+def test_daily_and_branch_reports_agree(db):
+    """Same cleaning rules, different grouping: the 2024 totals must be identical."""
+    _, daily = run_report(db, "daily_visits.sql")
+    _, branches = run_report(db, "visits_per_branch.sql")
+    assert sum(r[1] for r in daily) == sum(r[2] for r in branches)
