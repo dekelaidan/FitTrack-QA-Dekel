@@ -30,6 +30,9 @@ jobs:
       - name: Run the data-quality suite (fails the job on any blocking check)
         run: pytest --junitxml=dq-results.xml
 
+      - name: Per-load checks on the latest 24 h of data
+        run: DQ_SINCE=auto pytest tests/test_incremental.py
+
       - name: Run every report read-only, exactly as the reviewers will
         run: |
           for f in reports/*.sql; do
