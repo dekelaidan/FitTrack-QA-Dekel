@@ -9,6 +9,11 @@ import pytest
 
 from dq import BLOCKING, WARNING, Check, as_params, run_check
 
+# Extra copies (rows beyond the first per source_ref) landing on one UTC day.
+# Baseline on the provided load: median 2 per day, worst normal day 7; the two replay
+# bursts were 1,226 and 1,817. 100 is ~14x the worst normal day.
+DUPLICATE_BURST_THRESHOLD = 100
+
 # The same cleaning the report queries apply. Kept here as one definition so the
 # checks and the reports cannot drift apart silently.
 CLEAN_ACCESS = """
@@ -47,6 +52,23 @@ CHECKS = [
               GROUP BY source_ref, device_id
               HAVING count(DISTINCT event_ts) > 1) r
         GROUP BY 1, 2
+        """,
+    ),
+    Check(
+        "A14_duplicate_burst",
+        f"more than {DUPLICATE_BURST_THRESHOLD} duplicate copies ingested on one UTC day (replay burst; normal is <10)",
+        WARNING,
+        f"""
+        SELECT (ingested_at AT TIME ZONE 'UTC')::date AS ingested_day_utc,
+               count(*) AS extra_copies,
+               count(DISTINCT device_id) AS devices,
+               count(*) FILTER (WHERE event_ts <> first_ts) AS re_stamped
+        FROM (SELECT e.*, row_number() OVER (PARTITION BY source_ref ORDER BY event_ts, event_id) AS copy_number,
+                     min(event_ts) OVER (PARTITION BY source_ref) AS first_ts
+              FROM events e) x
+        WHERE copy_number > 1
+        GROUP BY 1
+        HAVING count(*) > {DUPLICATE_BURST_THRESHOLD}
         """,
     ),
     Check(
