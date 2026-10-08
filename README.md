@@ -173,10 +173,10 @@ tools/        mock_portal: local web app to reproduce the data-quality issues li
 
 ## Time spent
 
-About **2.5 hours** in total, over two sessions (Wednesday evening and Thursday morning): understanding the
+About **3.5 hours** in total, over two sessions (Wednesday evening and Thursday morning): understanding the
 brief and setting up, profiling the data, running and checking the SQL, designing the counting rules and the
 extra validation checks, and writing the documents.
 
 Most of the SQL, Python and first drafts of the documents were written with AI and then checked by me:
 re-running counts, cross-checking the reports against each other, and injecting known problems to prove the
-checks fail. That is why it came in under the suggested 3–5 hours. `AI_USAGE.md` describes how.
+checks fail. `AI_USAGE.md` describes how.
