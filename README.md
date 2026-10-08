@@ -33,9 +33,10 @@ pytest
 |---|---|
 | `0` | No blocking problem. Reports can go out. Known, handled issues are listed under **data-quality warnings** at the end of the output. |
 | `1` | At least one blocking check failed. Each failure prints the rule, the number of offending rows and a sample of them. |
-| `2` | A connection setting is missing (for example `PGHOST` not exported). |
+| `2` | A setting is wrong: a connection variable is missing (for example `PGHOST`), or `DQ_SINCE` is not a timestamp. |
 
-Against the provided database: **51 passed, 18 warnings, exit code 0**, in about 8 seconds.
+Against the provided database: **51 passed, 7 skipped, 18 warnings, exit code 0**, in about 8 seconds. The 7 skipped are
+the per-load checks below, which only run when a watermark is given.
 
 ### Running the database locally
 
@@ -58,11 +59,40 @@ pytest tests/test_reports.py            # only the report-query tests
 pytest --junitxml=dq-results.xml        # machine-readable results for CI
 ```
 
+### Per-load (event-driven) checks
+
+The checks above re-examine the **whole history** on every run, so problems that are already known and handled
+(the 2024 replays, one device's clock) keep showing as warnings. `tests/test_incremental.py` answers a different
+question: **did this load bring a new problem?** It looks only at rows ingested after a watermark, and every
+check in it is **blocking**.
+
+```bash
+DQ_SINCE=auto pytest                          # the last 24 h of loaded data (DQ_WINDOW_HOURS to change)
+DQ_SINCE=2025-01-01T00:00Z pytest             # everything ingested after the last good run
+```
+
+| Check | Fails when the new rows contain |
+|---|---|
+| `I01_load_is_empty` | nothing at all: the feed may have stopped |
+| `I02_new_unknown_event_type_or_casing` | an `event_type` that is not exactly a documented one (new type or casing drift) |
+| `I03_new_clock_ahead` | events stamped after they were ingested (any sender, +1 min) |
+| `I04_new_duplicate_burst` | more than 100 duplicate copies on one UTC day (normal is under 10) |
+| `I05_new_sequence_gap` | a device sequence gap: numbered events that never arrived |
+| `I06_new_unknown_member_id` | a `member_id` not in `members` that was never seen before |
+| `I07_new_late_crm_event` | a CRM event later than its usual pattern (> 1 day; cancellations > 35 days, beyond one monthly batch) |
+
+The watermark comes from the environment, so nothing is written to the database and the suite stays
+read-only. Without `DQ_SINCE` these checks are skipped. Replaying the 2024 history with different watermarks
+shows each known incident would have stopped the reports on the day it arrived: the casing week (`I02`), the
+D07 clock (`I03`), both replay bursts (`I04`), the D02-OUT data loss (`I05`) and the test cards' first day (`I06`).
+
 ### In CI
 
 [`.github/workflows/data-quality.yml`](.github/workflows/data-quality.yml) does what a CI job against every
 new load would do: it starts the database, runs `pytest` (the job fails on any blocking check), runs every
-report with `psql -f` in a read-only session the way the reviewers will, and keeps the JUnit results. To
+report with `psql -f` in a read-only session the way the reviewers will, and keeps the JUnit results. In a
+scheduled daily job, add `DQ_SINCE=auto` (or the time of the last successful run) so a new problem in the
+day's load fails the job. To
 point it at another database, set the `PG*` variables as repository secrets instead of starting Docker.
 
 ## What the suite checks

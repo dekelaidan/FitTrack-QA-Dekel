@@ -369,7 +369,15 @@ is, by construction, something the rules don't yet explain.
 ## What I would monitor from now on
 
 The test suite (`pytest`) is the daily gate on every new load. Blocking checks stop the reports; warnings
-are listed in the run summary. In addition I would alert on trends, not just presence:
+are listed in the run summary.
+
+**Run it per load, not only over all history.** `DQ_SINCE=auto pytest` (or `DQ_SINCE=<last good run>`) adds
+seven blocking checks that look only at newly ingested rows (`I01`–`I07` in `tests/test_incremental.py`). Old,
+handled problems stop repeating, and a *new* one stops the reports the day it arrives. Replayed against the 2024
+history, these checks would have caught every incident in this report on its first day: root causes 1, 3, 4, 5
+and 9. The watermark is an environment variable, so the suite stays read-only.
+
+In addition I would alert on trends, not just presence:
 
 | Monitor | Why | Alert when |
 |---|---|---|
